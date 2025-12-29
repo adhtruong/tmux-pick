@@ -1,0 +1,258 @@
+"""Core pattern extraction and action execution logic."""
+
+import os
+import re
+import subprocess
+import sys
+from pathlib import Path
+from typing import NotRequired, TypedDict
+
+import tomllib
+
+
+class Pattern(TypedDict):
+    """Pattern definition from config."""
+
+    name: str
+    regex: str
+    description: str
+    action: str
+    enabled: bool
+
+
+class Action(TypedDict):
+    """Action definition from config."""
+
+    command: str
+    fallback: NotRequired[str]
+    resolve_relative_path: NotRequired[bool]
+    description: NotRequired[str]
+
+
+class Config(TypedDict):
+    """Configuration structure."""
+
+    patterns: list[Pattern]
+    actions: dict[str, Action]
+
+
+def load_config_from_path(config_path: str) -> Config:
+    """Load configuration from TOML file path."""
+    config_path = os.path.expanduser(config_path)
+    with open(config_path, "rb") as f:
+        return tomllib.load(f)  # pyright: ignore[reportReturnType]
+
+
+def get_config_path() -> str:
+    """Get configuration file path from environment or default location."""
+    config_path = os.getenv("PATTERN_CONFIG")
+    if not config_path:
+        script_dir = Path(__file__).parent
+        config_path = str(script_dir / "../config/pattern-matcher.toml")
+    return config_path
+
+
+def load_config() -> Config:
+    """Load configuration from default location."""
+    return load_config_from_path(get_config_path())
+
+
+def find_patterns_in_text(text: str, config: Config) -> list[str]:
+    """Extract patterns from text and return tagged results (pure function).
+
+    Args:
+        text: Input text to search for patterns
+        config: Configuration containing pattern definitions
+
+    Returns:
+        List of tagged patterns in order of appearance: ["[TYPE] value", ...]
+    """
+    # Collect all matches with their positions in the text
+    all_matches = []
+
+    for pattern in config["patterns"]:
+        if not pattern["enabled"]:
+            continue
+
+        try:
+            regex = re.compile(pattern["regex"])
+        except re.error:
+            continue
+
+        # Find matches with their positions
+        for match_obj in regex.finditer(text):
+            # Use first capture group if present, otherwise full match
+            match_text = (
+                match_obj.group(1) if match_obj.lastindex else match_obj.group(0)
+            )
+            position = match_obj.start()
+
+            if match_text:
+                tagged = f"[{pattern['name']}] {match_text}"
+                all_matches.append((position, tagged))
+
+    # Sort by position (reverse order - recent items first), deduplicate while preserving order
+    seen = set()
+    results = []
+    for _, tagged in sorted(all_matches, key=lambda x: x[0], reverse=True):
+        if tagged not in seen:
+            seen.add(tagged)
+            results.append(tagged)
+
+    return results
+
+
+def parse_selection(selection: str) -> tuple[str, str] | None:
+    """Parse tagged selection into type and value (pure function).
+
+    Args:
+        selection: Tagged selection in format "[TYPE] value"
+
+    Returns:
+        Tuple of (type, value) or None if invalid format
+    """
+    parts = selection.split("]", 1)
+    if len(parts) != 2:
+        return None
+
+    pattern_type = parts[0].strip("[")
+    value = parts[1].strip()
+    return (pattern_type, value)
+
+
+def resolve_path(value: str) -> str:
+    """Resolve relative file paths to absolute."""
+    if not os.path.isabs(value):
+        # Use working directory from environment or current directory
+        work_dir = os.getenv("WORK_DIR", os.getcwd())
+        full_path = os.path.join(work_dir, value)
+        if os.path.isfile(full_path):
+            return full_path
+    return value
+
+
+def get_action_for_selection(
+    selection: str, config: Config
+) -> tuple[Action, str] | None:
+    """Get action and value for a tagged selection (pure function).
+
+    Args:
+        selection: Tagged selection in format "[TYPE] value"
+        config: Configuration containing pattern and action definitions
+
+    Returns:
+        Tuple of (action, value) or None if invalid/not found
+    """
+    parsed = parse_selection(selection)
+    if not parsed:
+        return None
+
+    pattern_type, value = parsed
+
+    if not value:
+        return None
+
+    # Find action name for this pattern type from config
+    action_name = None
+    for pattern in config["patterns"]:
+        if pattern["name"] == pattern_type:
+            action_name = pattern["action"]
+            break
+
+    if not action_name:
+        return None
+
+    # Get action definition from config
+    action = config["actions"].get(action_name)
+    if not action:
+        return None
+
+    return (action, value)
+
+
+def execute_command(action: Action, value: str) -> None:
+    """Execute an action command with the given value."""
+    # Resolve relative paths if needed
+    if action.get("resolve_relative_path", False):
+        value = resolve_path(value)
+
+    # Expand environment variables and substitute value
+    command = action["command"]
+    command = os.path.expandvars(command)
+    command = command.replace("{value}", value)
+
+    # Execute command
+    try:
+        subprocess.run(command, shell=True, check=True)
+    except (subprocess.CalledProcessError, FileNotFoundError) as e:
+        # Try fallback if available
+        if fallback := action.get("fallback"):
+            fallback = os.path.expandvars(fallback)
+            fallback = fallback.replace("{value}", value)
+            try:
+                subprocess.run(fallback, shell=True, check=True)
+            except (subprocess.CalledProcessError, FileNotFoundError):
+                raise RuntimeError(f"Could not execute action: {e}") from e
+        else:
+            raise RuntimeError(f"Could not execute action: {e}") from e
+
+
+def extract_patterns_from_stdin() -> None:
+    """Extract patterns from stdin and output tagged results."""
+    config = load_config()
+    text = sys.stdin.read()
+    results = find_patterns_in_text(text, config)
+
+    for result in results:
+        print(result)
+
+
+def execute_action_from_selection(selection: str) -> None:
+    """Execute action based on tagged pattern selection."""
+    config = load_config()
+    result = get_action_for_selection(selection, config)
+
+    if not result:
+        print("Error: invalid selection or action not found", file=sys.stderr)
+        sys.exit(1)
+
+    action, value = result
+    try:
+        execute_command(action, value)
+    except RuntimeError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
+def main() -> None:
+    """Main entry point."""
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        description="Extract patterns from text and execute configurable actions",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+
+    subparsers = parser.add_subparsers(
+        dest="command", required=True, help="Command to run"
+    )
+
+    # Extract subcommand
+    subparsers.add_parser(
+        "extract", help="Extract patterns from stdin and output tagged results"
+    )
+
+    # Execute subcommand
+    execute_parser = subparsers.add_parser(
+        "execute", help="Execute action based on tagged pattern selection"
+    )
+    execute_parser.add_argument(
+        "selection", help='Tagged selection in format "[TYPE] value"'
+    )
+
+    args = parser.parse_args()
+
+    if args.command == "extract":
+        extract_patterns_from_stdin()
+    elif args.command == "execute":
+        execute_action_from_selection(args.selection)

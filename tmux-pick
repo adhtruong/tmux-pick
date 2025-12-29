@@ -1,0 +1,64 @@
+#!/usr/bin/env bash
+# Interactive pattern selection with fzf
+
+set -euo pipefail
+
+CURRENT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PATTERN_SELECT="$CURRENT_DIR/bin/pattern_select"
+
+# Get config from environment or tmux option
+if [[ -z "${PATTERN_CONFIG:-}" ]]; then
+	if [[ -n "${TMUX:-}" ]]; then
+		PATTERN_CONFIG=$(tmux show-option -gqv @pick-config)
+	fi
+fi
+
+# Verify config is set
+if [[ -z "${PATTERN_CONFIG:-}" ]]; then
+	echo "Error: Config not set. Set @pick-config in tmux.conf" >&2
+	exit 1
+fi
+
+export PATTERN_CONFIG
+
+# Check dependencies
+command -v fzf &>/dev/null || {
+	echo "Error: fzf not found" >&2
+	exit 1
+}
+[[ -x "$PATTERN_SELECT" ]] || {
+	echo "Error: pattern_select not found at $PATTERN_SELECT" >&2
+	exit 1
+}
+
+# Capture content and set working directory
+if [[ -n "${TMUX:-}" ]]; then
+	content=$(tmux capture-pane -p -J -S -3000)
+	export WORK_DIR=$(tmux display-message -p '#{pane_current_path}')
+else
+	[[ -p /dev/stdin ]] || {
+		echo "Error: Must be run from tmux or with stdin" >&2
+		exit 1
+	}
+	content=$(cat)
+	export WORK_DIR=$(pwd)
+fi
+
+# Extract and validate patterns
+patterns=$(echo "$content" | "$PATTERN_SELECT" extract) || exit 1
+if [[ -z "$patterns" ]] || [[ -z "$(echo "$patterns" | tr -d '[:space:]')" ]]; then
+	[[ -n "${TMUX:-}" ]] && tmux display-message "No patterns found" || echo "No patterns found" >&2
+	exit 0
+fi
+
+# Select pattern with fzf and execute
+selected=$(echo "$patterns" | fzf \
+	--tmux 90%,90% \
+	--prompt='Select pattern: ' \
+	--border=rounded \
+	--header='Enter=execute | Esc=cancel' \
+	--no-wrap \
+	--tabstop=1) || exit 0
+
+# Execute if something was selected
+[[ -n "$selected" ]] && "$PATTERN_SELECT" execute "$selected"

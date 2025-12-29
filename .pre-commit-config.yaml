@@ -31,7 +31,7 @@ repos:
       - id: ruff
         name: ruff
         language: system
-        entry: uv run --all-groups ruff check
+        entry: uv run --all-groups ruff check --fix
         types: [python]
       - id: ruff-format
         name: ruff-format
@@ -41,5 +41,5 @@ repos:
       - id: pyright
         name: pyright
         language: system
-        entry: uv run --all-groups basedpyright
+        entry: uv run --all-groups basedpyright --level error
         types: [python]
