@@ -31,17 +31,15 @@ command -v fzf &>/dev/null || {
 	exit 1
 }
 
-# Capture content and set working directory
+# Capture content
 if [[ -n "${TMUX:-}" ]]; then
 	content=$(tmux capture-pane -p -J -S -3000)
-	export WORK_DIR=$(tmux display-message -p '#{pane_current_path}')
 else
 	[[ -p /dev/stdin ]] || {
 		echo "Error: Must be run from tmux or with stdin" >&2
 		exit 1
 	}
 	content=$(cat)
-	export WORK_DIR=$(pwd)
 fi
 
 # Extract and validate patterns

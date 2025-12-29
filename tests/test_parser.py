@@ -1,16 +1,12 @@
 """Tests for pattern extraction and parsing logic."""
 
-from pathlib import Path
-
 import pytest
-from _pytest.monkeypatch import MonkeyPatch
 
 from tmux_pick.core import (
     Config,
     find_patterns_in_text,
     get_action_for_selection,
     parse_selection,
-    resolve_path,
 )
 
 
@@ -47,7 +43,6 @@ def sample_config() -> Config:
             },
             "open_file": {
                 "command": "vim {value}",
-                "resolve_relative_path": True,
             },
         },
     }
@@ -161,49 +156,3 @@ def test_get_action_for_selection_invalid(
     """Test getting action for invalid selections."""
     result = get_action_for_selection(selection, sample_config)
     assert result is None
-
-
-# Path resolution tests
-
-
-def test_resolve_path_absolute() -> None:
-    """Test that absolute paths are returned unchanged."""
-    path = "/absolute/path/to/file.txt"
-    result = resolve_path(path)
-    assert result == path
-
-
-def test_resolve_path_relative_exists(tmp_path: Path, monkeypatch: MonkeyPatch) -> None:
-    """Test resolving relative path when file exists."""
-    test_file = tmp_path / "test.txt"
-    test_file.touch()
-
-    monkeypatch.setenv("WORK_DIR", str(tmp_path))
-
-    result = resolve_path("test.txt")
-    assert result == str(test_file)
-
-
-def test_resolve_path_relative_not_exists(
-    tmp_path: Path, monkeypatch: MonkeyPatch
-) -> None:
-    """Test resolving relative path when file doesn't exist."""
-    monkeypatch.setenv("WORK_DIR", str(tmp_path))
-
-    result = resolve_path("nonexistent.txt")
-    assert result == "nonexistent.txt"
-
-
-def test_resolve_path_defaults_to_cwd(monkeypatch: MonkeyPatch) -> None:
-    """Test that WORK_DIR defaults to current directory."""
-    monkeypatch.delenv("WORK_DIR", raising=False)
-
-    cwd = Path.cwd()
-    test_file = cwd / "temp_test.txt"
-    try:
-        test_file.touch()
-        result = resolve_path("temp_test.txt")
-        assert result == str(test_file)
-    finally:
-        if test_file.exists():
-            test_file.unlink()

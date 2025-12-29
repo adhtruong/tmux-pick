@@ -4,7 +4,6 @@ import os
 import re
 import subprocess
 import sys
-from pathlib import Path
 from typing import NotRequired, TypedDict
 
 import tomllib
@@ -25,7 +24,6 @@ class Action(TypedDict):
 
     command: str
     fallback: NotRequired[str]
-    resolve_relative_path: NotRequired[bool]
     description: NotRequired[str]
 
 
@@ -43,18 +41,12 @@ def load_config_from_path(config_path: str) -> Config:
         return tomllib.load(f)  # pyright: ignore[reportReturnType]
 
 
-def get_config_path() -> str:
-    """Get configuration file path from environment or default location."""
+def load_config() -> Config:
+    """Load configuration from environment variable PATTERN_CONFIG."""
     config_path = os.getenv("PATTERN_CONFIG")
     if not config_path:
-        script_dir = Path(__file__).parent
-        config_path = str(script_dir / "../config/pattern-matcher.toml")
-    return config_path
-
-
-def load_config() -> Config:
-    """Load configuration from default location."""
-    return load_config_from_path(get_config_path())
+        raise RuntimeError("PATTERN_CONFIG environment variable not set")
+    return load_config_from_path(config_path)
 
 
 def find_patterns_in_text(text: str, config: Config) -> list[str]:
@@ -120,17 +112,6 @@ def parse_selection(selection: str) -> tuple[str, str] | None:
     return (pattern_type, value)
 
 
-def resolve_path(value: str) -> str:
-    """Resolve relative file paths to absolute."""
-    if not os.path.isabs(value):
-        # Use working directory from environment or current directory
-        work_dir = os.getenv("WORK_DIR", os.getcwd())
-        full_path = os.path.join(work_dir, value)
-        if os.path.isfile(full_path):
-            return full_path
-    return value
-
-
 def get_action_for_selection(
     selection: str, config: Config
 ) -> tuple[Action, str] | None:
@@ -172,10 +153,6 @@ def get_action_for_selection(
 
 def execute_command(action: Action, value: str) -> None:
     """Execute an action command with the given value."""
-    # Resolve relative paths if needed
-    if action.get("resolve_relative_path", False):
-        value = resolve_path(value)
-
     # Expand environment variables and substitute value
     command = action["command"]
     command = os.path.expandvars(command)

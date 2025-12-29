@@ -55,7 +55,6 @@ The Python module can be used outside of tmux:
 echo "Check out https://example.com" | uv run -m tmux_pick extract
 
 # Execute an action
-export WORK_DIR=$(pwd)
 uv run -m tmux_pick execute "[URL] https://example.com"
 ```
 
@@ -100,8 +99,7 @@ fallback = 'xdg-open "{value}"'
 description = "Open in default browser"
 
 [actions.open_editor]
-command = '''tmux new-window -c "$WORK_DIR" "${EDITOR:-vim} '{value}'"'''
-resolve_relative_path = true
+command = '''tmux new-window -c "#{pane_current_path}" "${EDITOR:-vim} '{value}'"'''
 description = "Open in text editor"
 ```
 
@@ -120,14 +118,12 @@ description = "Open in text editor"
 
 - **`command`**: Shell command to execute
   - `{value}` is replaced with the matched text
-  - Can use `$WORK_DIR` environment variable (pane's current path)
+  - Use `#{pane_current_path}` for tmux pane's directory
 - **`fallback`** (optional): Alternative command if primary fails
-- **`resolve_relative_path`** (optional): Resolve paths relative to `$WORK_DIR`
 - **`description`** (optional): Human-readable description
 
 ### Environment Variables
 
-- **`$WORK_DIR`**: Current working directory (from tmux pane or `pwd`)
 - **`$PATTERN_CONFIG`**: Path to config file
 
 ## Regex and Capture Groups
