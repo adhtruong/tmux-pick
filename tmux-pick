@@ -50,13 +50,11 @@ if [[ -z "$patterns" ]] || [[ -z "$(echo "$patterns" | tr -d '[:space:]')" ]]; t
 fi
 
 # Select pattern with fzf and execute
-selected=$(echo "$patterns" | fzf \
-	--tmux 90%,90% \
-	--prompt='Select pattern: ' \
-	--border=rounded \
-	--header='Enter=execute | Esc=cancel' \
-	--no-wrap \
-	--tabstop=1) || exit 0
+fzf_opts=(
+	--prompt='Select pattern: '
+	--header='Enter=execute | Esc=cancel'
+)
+selected=$(echo "$patterns" | fzf "${fzf_opts[@]}") || exit 0
 
 # Execute if something was selected
 [[ -n "$selected" ]] && "$PATTERN_SELECT" execute "$selected"
