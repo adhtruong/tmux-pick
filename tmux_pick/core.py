@@ -1,5 +1,6 @@
 """Core pattern extraction and action execution logic."""
 
+import argparse
 import os
 import re
 import subprocess
@@ -153,10 +154,13 @@ def get_action_for_selection(
 
 def execute_command(action: Action, value: str) -> None:
     """Execute an action command with the given value."""
+    # Expand ~ in value before substitution
+    expanded_value = os.path.expanduser(value)
+
     # Expand environment variables and substitute value
     command = action["command"]
     command = os.path.expandvars(command)
-    command = command.replace("{value}", value)
+    command = command.replace("{value}", expanded_value)
 
     # Execute command
     try:
@@ -165,7 +169,7 @@ def execute_command(action: Action, value: str) -> None:
         # Try fallback if available
         if fallback := action.get("fallback"):
             fallback = os.path.expandvars(fallback)
-            fallback = fallback.replace("{value}", value)
+            fallback = fallback.replace("{value}", expanded_value)
             try:
                 subprocess.run(fallback, shell=True, check=True)
             except (subprocess.CalledProcessError, FileNotFoundError):
@@ -201,10 +205,18 @@ def execute_action_from_selection(selection: str) -> None:
         sys.exit(1)
 
 
+def extract_value_from_selection(selection: str) -> None:
+    """Extract just the value from a tagged selection."""
+    parsed = parse_selection(selection)
+    if not parsed:
+        print(selection, file=sys.stderr)
+        sys.exit(1)
+    _, value = parsed
+    print(value)
+
+
 def main() -> None:
     """Main entry point."""
-    import argparse
-
     parser = argparse.ArgumentParser(
         description="Extract patterns from text and execute configurable actions",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -227,9 +239,19 @@ def main() -> None:
         "selection", help='Tagged selection in format "[TYPE] value"'
     )
 
+    # Value subcommand
+    value_parser = subparsers.add_parser(
+        "value", help="Extract just the value from a tagged selection"
+    )
+    value_parser.add_argument(
+        "selection", help='Tagged selection in format "[TYPE] value"'
+    )
+
     args = parser.parse_args()
 
     if args.command == "extract":
         extract_patterns_from_stdin()
     elif args.command == "execute":
         execute_action_from_selection(args.selection)
+    elif args.command == "value":
+        extract_value_from_selection(args.selection)
