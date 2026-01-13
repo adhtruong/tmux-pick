@@ -55,15 +55,15 @@ def config() -> Config:
         (
             "Check out https://example.com and http://test.org",
             [
-                "[URL] http://test.org",
-                "[URL] https://example.com",
+                "http://test.org\tURL",
+                "https://example.com\tURL",
             ],
         ),
         (
             "See main.py and docs/readme.md for details",
             [
-                "[FILE] docs/readme.md",
-                "[FILE] main.py",
+                "docs/readme.md\tFILE",
+                "main.py\tFILE",
             ],
         ),
         ("This has a disabled pattern", []),
@@ -80,22 +80,22 @@ def test_find_patterns_deduplication(config: Config) -> None:
     """Test that duplicate matches are deduplicated."""
     text = "https://example.com and https://example.com again"
     result = find_patterns_in_text(text, config)
-    assert result == ["[URL] https://example.com"]
+    assert result == ["https://example.com\tURL"]
 
 
 def test_find_patterns_capture_group(config: Config) -> None:
     """Test that regex capture groups are used if present."""
     text = "Check out src/main.py"
     result = find_patterns_in_text(text, config)
-    assert result == ["[FILE] src/main.py"]
+    assert result == ["src/main.py\tFILE"]
 
 
 @pytest.mark.parametrize(
     ("selection", "expected"),
     [
-        ("[URL] https://example.com", ("URL", "https://example.com")),
-        ("[FILE]   main.py   ", ("FILE", "main.py")),
-        ("[URL]", ("URL", "")),
+        ("https://example.com\tURL", ("URL", "https://example.com")),
+        ("main.py\tFILE", ("FILE", "main.py")),
+        ("\tURL", ("URL", "")),
     ],
 )
 def test_parse_selection_valid(selection: str, expected: tuple[str, str]) -> None:
@@ -107,7 +107,7 @@ def test_parse_selection_valid(selection: str, expected: tuple[str, str]) -> Non
 @pytest.mark.parametrize(
     "selection",
     [
-        "[URL https://example.com",
+        "no_tab_here",
         "",
     ],
 )
@@ -120,8 +120,8 @@ def test_parse_selection_invalid(selection: str) -> None:
 @pytest.mark.parametrize(
     ("selection", "expected_command", "expected_value"),
     [
-        ("[URL] https://example.com", "open {value}", "https://example.com"),
-        ("[FILE] main.py", "vim {value}", "main.py"),
+        ("https://example.com\tURL", "open {value}", "https://example.com"),
+        ("main.py\tFILE", "vim {value}", "main.py"),
     ],
 )
 def test_get_action_for_selection_valid(
@@ -141,8 +141,8 @@ def test_get_action_for_selection_valid(
 @pytest.mark.parametrize(
     "selection",
     [
-        "[UNKNOWN] test",
-        "[URL] ",
+        "test\tUNKNOWN",
+        "\tURL",
         "not a valid selection",
     ],
 )
@@ -155,9 +155,9 @@ def test_get_action_for_selection_invalid(config: Config, selection: str) -> Non
 @pytest.mark.parametrize(
     ("selection", "expected_value"),
     [
-        pytest.param("[URL] https://example.com", "https://example.com", id="url"),
-        pytest.param("[FILE] main.py", "main.py", id="file"),
-        pytest.param("[URL]   test.com   ", "test.com", id="whitespace"),
+        pytest.param("https://example.com\tURL", "https://example.com", id="url"),
+        pytest.param("main.py\tFILE", "main.py", id="file"),
+        pytest.param("test.com\tURL", "test.com", id="simple"),
     ],
 )
 def test_extract_value_from_selection(

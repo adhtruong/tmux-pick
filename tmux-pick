@@ -6,6 +6,16 @@ set -euo pipefail
 CURRENT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PATTERN_SELECT="$CURRENT_DIR/bin/pattern_select"
 
+# Cross-platform notification
+notify() {
+	local message="$1"
+	if [[ -n "${TMUX:-}" ]]; then
+		tmux display-message "$message"
+	else
+		echo "$message" >&2
+	fi
+}
+
 # Get config from environment or tmux option
 if [[ -z "${PATTERN_CONFIG:-}" ]]; then
 	if [[ -n "${TMUX:-}" ]]; then
@@ -45,14 +55,19 @@ fi
 # Extract and validate patterns
 patterns=$(echo "$content" | "$PATTERN_SELECT" extract) || exit 1
 if [[ -z "$patterns" ]] || [[ -z "$(echo "$patterns" | tr -d '[:space:]')" ]]; then
-	[[ -n "${TMUX:-}" ]] && tmux display-message "No patterns found" || echo "No patterns found" >&2
+	notify "No patterns found"
 	exit 0
 fi
 
-# Select pattern with fzf and execute
+# Build fzf options with template formatting
+# Input format: value\ttype (tab-delimited)
+# Display: [type] value (formatted by fzf), Search: value only
 fzf_opts=(
 	--prompt='Select pattern: '
 	--header='Enter=execute | Esc=cancel'
+	--delimiter=$'\t'
+	--with-nth='[{2}] {1}'
+	--nth='1'
 )
 selected=$(echo "$patterns" | fzf "${fzf_opts[@]}") || exit 0
 

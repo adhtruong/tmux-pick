@@ -51,14 +51,14 @@ def load_config() -> Config:
 
 
 def find_patterns_in_text(text: str, config: Config) -> list[str]:
-    """Extract patterns from text and return tagged results (pure function).
+    """Extract patterns from text and return structured results.
 
     Args:
         text: Input text to search for patterns
         config: Configuration containing pattern definitions
 
     Returns:
-        List of tagged patterns in order of appearance: ["[TYPE] value", ...]
+        List of delimited patterns: ["value|type", ...]
     """
     # Collect all matches with their positions in the text
     all_matches = []
@@ -81,45 +81,46 @@ def find_patterns_in_text(text: str, config: Config) -> list[str]:
             position = match_obj.start()
 
             if match_text:
-                tagged = f"[{pattern['name']}] {match_text}"
-                all_matches.append((position, tagged))
+                # Output: value\ttype (tab-delimited, fzf will handle display formatting)
+                structured = f"{match_text}\t{pattern['name']}"
+                all_matches.append((position, structured))
 
     # Sort by position (reverse order - recent items first), deduplicate while preserving order
     seen = set()
     results = []
-    for _, tagged in sorted(all_matches, key=lambda x: x[0], reverse=True):
-        if tagged not in seen:
-            seen.add(tagged)
-            results.append(tagged)
+    for _, structured in sorted(all_matches, key=lambda x: x[0], reverse=True):
+        if structured not in seen:
+            seen.add(structured)
+            results.append(structured)
 
     return results
 
 
 def parse_selection(selection: str) -> tuple[str, str] | None:
-    """Parse tagged selection into type and value (pure function).
+    """Parse delimited selection into type and value.
 
     Args:
-        selection: Tagged selection in format "[TYPE] value"
+        selection: Tab-delimited selection in format "value\ttype"
 
     Returns:
         Tuple of (type, value) or None if invalid format
     """
-    parts = selection.split("]", 1)
+    parts = selection.split("\t")
     if len(parts) != 2:
         return None
 
-    pattern_type = parts[0].strip("[")
-    value = parts[1].strip()
+    value = parts[0]
+    pattern_type = parts[1]
     return (pattern_type, value)
 
 
 def get_action_for_selection(
     selection: str, config: Config
 ) -> tuple[Action, str] | None:
-    """Get action and value for a tagged selection (pure function).
+    """Get action and value for a delimited selection.
 
     Args:
-        selection: Tagged selection in format "[TYPE] value"
+        selection: Tab-delimited selection in format "value\ttype"
         config: Configuration containing pattern and action definitions
 
     Returns:
@@ -233,18 +234,18 @@ def main() -> None:
 
     # Execute subcommand
     execute_parser = subparsers.add_parser(
-        "execute", help="Execute action based on tagged pattern selection"
+        "execute", help="Execute action based on pattern selection"
     )
     execute_parser.add_argument(
-        "selection", help='Tagged selection in format "[TYPE] value"'
+        "selection", help='Tab-delimited selection in format "value\\ttype"'
     )
 
     # Value subcommand
     value_parser = subparsers.add_parser(
-        "value", help="Extract just the value from a tagged selection"
+        "value", help="Extract just the value from a selection"
     )
     value_parser.add_argument(
-        "selection", help='Tagged selection in format "[TYPE] value"'
+        "selection", help='Tab-delimited selection in format "value\\ttype"'
     )
 
     args = parser.parse_args()
