@@ -13,13 +13,23 @@ Interactive pattern matching and action execution for tmux. Extract URLs, git ha
 
 ## Installation
 
+### Quick Start
+
+1. Copy the default config:
+```bash
+mkdir -p ~/.config
+cp config.default.toml ~/.config/tmux-pick.toml
+```
+
+2. Install the plugin (see methods below)
+
 ### With TPM (Tmux Plugin Manager)
 
 Add to `.tmux.conf`:
 
 ```tmux
 set -g @plugin 'path/to/tmux-pick'
-set -g @pick-config '~/.config/pattern-matcher.toml'
+set -g @pick-config '~/.config/tmux-pick.toml'
 set -g @pick-key 'u'  # Optional: customize keybinding (default: u)
 ```
 
@@ -28,10 +38,11 @@ Then press `prefix + I` to install.
 ### Manual
 
 1. Clone this repository
-2. Add to `.tmux.conf`:
+2. Copy default config: `cp config.default.toml ~/.config/tmux-pick.toml`
+3. Add to `.tmux.conf`:
 
 ```tmux
-set -g @pick-config '~/.config/pattern-matcher.toml'
+set -g @pick-config '~/.config/tmux-pick.toml'
 run-shell 'path/to/tmux-pick/pick.tmux'
 ```
 
@@ -60,12 +71,22 @@ uv run -m tmux_pick execute "[URL] https://example.com"
 
 ## Configuration
 
+### Start with Defaults
+
+The project includes `config.default.toml` with common patterns (URLs, files, git hashes, IPs). Copy it to get started:
+
+```bash
+cp config.default.toml ~/.config/tmux-pick.toml
+```
+
+Then customize by enabling/disabling patterns or adding your own.
+
 ### Required: Config File Location
 
 **Must be set before loading the plugin:**
 
 ```tmux
-set -g @pick-config '~/.config/pattern-matcher.toml'
+set -g @pick-config '~/.config/tmux-pick.toml'
 ```
 
 ### Optional: Custom Keybinding
@@ -143,12 +164,16 @@ regex = '''(?:^|\s)([a-zA-Z0-9_./\-]+\.py)(?:\s|$)'''
 
 ## Default Patterns
 
-Common pattern examples:
+The included `config.default.toml` provides these patterns:
 
 - **URL**: HTTP/HTTPS URLs → Open in browser
-- **FILE**: File paths → Open in editor (new tmux window)
-- **GIT**: Git commit hashes → Show commit details
+- **FILE**: File paths with common extensions → Open in editor (new tmux window)
+- **GIT**: Git commit hashes (7-40 chars) → Show commit details
 - **IP**: IPv4 addresses → Copy to clipboard
+- **PATH**: Absolute paths → Open file/directory
+- **PORT**: localhost URLs → Open in browser (disabled by default)
+
+Copy the file and enable/disable patterns as needed.
 
 ## Requirements
 

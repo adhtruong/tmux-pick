@@ -3,6 +3,7 @@
 import argparse
 import os
 import re
+import shlex
 import subprocess
 import sys
 from typing import NotRequired, TypedDict
@@ -97,82 +98,60 @@ def find_patterns_in_text(text: str, config: Config) -> list[str]:
 
 
 def parse_selection(selection: str) -> tuple[str, str] | None:
-    """Parse delimited selection into type and value.
-
-    Args:
-        selection: Tab-delimited selection in format "value\ttype"
-
-    Returns:
-        Tuple of (type, value) or None if invalid format
-    """
-    parts = selection.split("\t")
+    """Parse tab-delimited selection into (type, value) or None if invalid."""
+    parts = selection.rsplit("\t", 1)
     if len(parts) != 2:
         return None
-
-    value = parts[0]
-    pattern_type = parts[1]
-    return (pattern_type, value)
+    return (parts[1], parts[0])
 
 
 def get_action_for_selection(
     selection: str, config: Config
 ) -> tuple[Action, str] | None:
-    """Get action and value for a delimited selection.
-
-    Args:
-        selection: Tab-delimited selection in format "value\ttype"
-        config: Configuration containing pattern and action definitions
-
-    Returns:
-        Tuple of (action, value) or None if invalid/not found
-    """
+    """Get action and value for a tab-delimited selection, or None if invalid."""
     parsed = parse_selection(selection)
     if not parsed:
         return None
 
     pattern_type, value = parsed
-
     if not value:
         return None
 
-    # Find action name for this pattern type from config
-    action_name = None
-    for pattern in config["patterns"]:
-        if pattern["name"] == pattern_type:
-            action_name = pattern["action"]
-            break
+    # Reject values with newlines (breaks shell execution)
+    if "\n" in value or "\r" in value:
+        print("Warning: Skipping value with newlines", file=sys.stderr)
+        return None
 
+    # Find action name for this pattern type
+    action_name = next(
+        (p["action"] for p in config["patterns"] if p["name"] == pattern_type),
+        None,
+    )
     if not action_name:
         return None
 
-    # Get action definition from config
     action = config["actions"].get(action_name)
-    if not action:
-        return None
+    return (action, value) if action else None
 
-    return (action, value)
+
+def _prepare_command(template: str, value: str) -> str:
+    """Prepare command by expanding vars and substituting escaped value."""
+    safe_value = shlex.quote(os.path.expanduser(value))
+    return os.path.expandvars(template).replace("{value}", safe_value)
 
 
 def execute_command(action: Action, value: str) -> None:
-    """Execute an action command with the given value."""
-    # Expand ~ in value before substitution
-    expanded_value = os.path.expanduser(value)
+    """Execute an action command with the given value (shell-escaped for safety)."""
+    command = _prepare_command(action["command"], value)
 
-    # Expand environment variables and substitute value
-    command = action["command"]
-    command = os.path.expandvars(command)
-    command = command.replace("{value}", expanded_value)
-
-    # Execute command
     try:
         subprocess.run(command, shell=True, check=True)
     except (subprocess.CalledProcessError, FileNotFoundError) as e:
-        # Try fallback if available
         if fallback := action.get("fallback"):
-            fallback = os.path.expandvars(fallback)
-            fallback = fallback.replace("{value}", expanded_value)
             try:
-                subprocess.run(fallback, shell=True, check=True)
+                subprocess.run(
+                    _prepare_command(fallback, value), shell=True, check=True
+                )
             except (subprocess.CalledProcessError, FileNotFoundError):
                 raise RuntimeError(f"Could not execute action: {e}") from e
         else:
