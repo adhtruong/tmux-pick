@@ -1,0 +1,79 @@
+# Default configuration for tmux-pick
+# Copy this file to ~/.config/tmux-pick.toml and customize
+
+# Patterns are matched in order. Each pattern extracts values from text
+# and tags them for selection in fzf.
+
+[[patterns]]
+name = "URL"
+regex = '''https?://[^\s<>"'()]+'''
+description = "HTTP/HTTPS URLs"
+action = "open_browser"
+enabled = true
+
+[[patterns]]
+name = "FILE"
+regex = '''([a-zA-Z0-9_./\-]+\.(?:py|js|ts|jsx|tsx|go|rs|java|rb|sh|md|json|yaml|yml|toml|txt|log))'''
+description = "File paths with common extensions"
+action = "open_editor"
+enabled = true
+
+[[patterns]]
+name = "GIT"
+regex = '''\b([a-f0-9]{7,40})\b'''
+description = "Git commit hashes (7-40 hex chars)"
+action = "git_show"
+enabled = true
+
+[[patterns]]
+name = "IP"
+regex = '''\b(?:[0-9]{1,3}\.){3}[0-9]{1,3}\b'''
+description = "IPv4 addresses"
+action = "copy_clipboard"
+enabled = true
+
+[[patterns]]
+name = "PATH"
+regex = '''(?<![:/])(/[a-zA-Z0-9_.\-][a-zA-Z0-9_./\-]*)'''
+description = "Absolute file paths"
+action = "open_path"
+enabled = true
+
+[[patterns]]
+name = "PORT"
+regex = '''(?:localhost|127\.0\.0\.1):(\d{2,5})'''
+description = "Local ports (localhost:PORT)"
+action = "open_localhost"
+enabled = false
+
+# Actions define what happens when you select a pattern
+# Note: {value} is automatically escaped for shell safety - do not add quotes
+
+[actions.open_browser]
+command = 'open {value}'
+fallback = 'xdg-open {value}'
+description = "Open URL in default browser"
+
+[actions.open_editor]
+command = '''tmux new-window -c "#{pane_current_path}" "${EDITOR:-vim} {value}"'''
+fallback = '${EDITOR:-vim} {value}'
+description = "Open file in editor (new tmux window or current terminal)"
+
+[actions.git_show]
+command = '''tmux new-window -c "#{pane_current_path}" "git show {value} | less"'''
+fallback = 'git show {value}'
+description = "Show git commit details"
+
+[actions.copy_clipboard]
+command = 'printf "%s" {value} | pbcopy 2>/dev/null || printf "%s" {value} | wl-copy 2>/dev/null || printf "%s" {value} | xclip -selection clipboard 2>/dev/null'
+description = "Copy to clipboard (cross-platform)"
+
+[actions.open_path]
+command = '''tmux new-window -c "#{pane_current_path}" "${EDITOR:-vim} {value}"'''
+fallback = 'cd {value} 2>/dev/null || ${EDITOR:-vim} {value}'
+description = "Open path (file or directory)"
+
+[actions.open_localhost]
+command = 'open http://localhost:{value}'
+fallback = 'xdg-open http://localhost:{value}'
+description = "Open localhost URL in browser"

@@ -1,6 +1,7 @@
 """Core pattern extraction and action execution logic."""
 
 import argparse
+import importlib.resources
 import os
 import re
 import shlex
@@ -43,12 +44,21 @@ def load_config_from_path(config_path: str) -> Config:
         return tomllib.load(f)  # pyright: ignore[reportReturnType]
 
 
+DEFAULT_CONFIG_PATH = "~/.config/tmux-pick.toml"
+
+
+def load_bundled_config() -> Config:
+    """Load the bundled default configuration."""
+    config_file = importlib.resources.files("tmux_pick").joinpath("config.default.toml")
+    return tomllib.loads(config_file.read_text())  # pyright: ignore[reportReturnType]
+
+
 def load_config() -> Config:
-    """Load configuration from environment variable PATTERN_CONFIG."""
-    config_path = os.getenv("PATTERN_CONFIG")
-    if not config_path:
-        raise RuntimeError("PATTERN_CONFIG environment variable not set")
-    return load_config_from_path(config_path)
+    """Load configuration from PATTERN_CONFIG env var, default location, or bundled default."""
+    config_path = os.path.expanduser(os.getenv("PATTERN_CONFIG", DEFAULT_CONFIG_PATH))
+    if os.path.exists(config_path):
+        return load_config_from_path(config_path)
+    return load_bundled_config()
 
 
 def find_patterns_in_text(text: str, config: Config) -> list[str]:
