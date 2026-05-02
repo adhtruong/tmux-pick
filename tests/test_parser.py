@@ -9,6 +9,7 @@ from tmux_pick.core import (
     extract_value_from_selection,
     find_patterns_in_text,
     get_action_for_selection,
+    load_bundled_config,
     parse_selection,
 )
 
@@ -270,6 +271,37 @@ def test_shlex_quote_escapes_dangerous_values(dangerous_value: str) -> None:
     # The escaped value should not allow command injection
     # This is a basic sanity check - the actual security comes from shlex.quote
     assert safe != dangerous_value or dangerous_value.isalnum()
+
+
+@pytest.fixture
+def default_config() -> Config:
+    """Load the bundled default config (tests production regex patterns)."""
+    return load_bundled_config()
+
+
+@pytest.mark.parametrize(
+    ("text", "expected_values"),
+    [
+        ("error in /path/to/file.py:42 here", ["/path/to/file.py:42"]),
+        ("see ~/config/init.lua:5 for setup", ["~/config/init.lua:5"]),
+        ("open ./src/main.rs:100 now", ["./src/main.rs:100"]),
+        ("check /path/to/file.py no line", ["/path/to/file.py"]),
+        ("config.toml:5 is wrong", ["config.toml:5"]),
+        ("see README.md for details", ["README.md"]),
+        ("strip trailing dot /path/to/file.py.", ["/path/to/file.py"]),
+        ("strip trailing comma /path/to/file.py,", ["/path/to/file.py"]),
+        ("not a path -----", []),
+        ("bare ~ is not a path", []),
+    ],
+)
+def test_file_pattern_line_numbers(
+    default_config: Config, text: str, expected_values: list[str]
+) -> None:
+    """Test FILE pattern extracts paths with optional line numbers."""
+    results = find_patterns_in_text(text, default_config)
+    file_results = [r for r in results if r.endswith("\tFILE")]
+    values = [r.split("\t")[0] for r in file_results]
+    assert values == expected_values
 
 
 def test_full_pipeline_with_tabs(config: Config) -> None:

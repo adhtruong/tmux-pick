@@ -13,8 +13,8 @@ enabled = true
 
 [[patterns]]
 name = "FILE"
-regex = '''(?:^|\s|['"])([/~][a-zA-Z0-9._/\-~]*[a-zA-Z0-9_/\-~]|[a-zA-Z0-9_/\-~]+\.(?:bash|conf|fish|java|json|toml|yaml|cpp|cfg|env|hpp|ini|jsx|md|py|rs|sh|ts|go|h|js|txt|tsx|vim|lua|yml|zsh)(?:[a-zA-Z0-9_\-]+)?)'''
-description = "File paths (absolute/home paths or relative with extensions)"
+regex = '''(?:^|\s|['"])((?:/|~/|\./)[^\s<>"'\\|;{}(),*\[\]?\t]*[a-zA-Z0-9_\-](?::\d+)?|[a-zA-Z0-9_][a-zA-Z0-9_.\-/]*\.(?:bash|conf|fish|java|json|toml|yaml|cpp|cfg|env|hpp|ini|jsx|md|py|rs|sh|ts|go|h|js|txt|tsx|vim|lua|yml|zsh)(?::\d+)?)'''
+description = "File paths (absolute, home, relative with ./, or relative with known extension) with optional :line"
 action = "open_editor"
 enabled = true
 
@@ -48,8 +48,8 @@ fallback = 'xdg-open {value}'
 description = "Open URL in default browser"
 
 [actions.open_editor]
-command = '''file_path=$(eval echo "{value}"); if [ "$(tmux display-message -p "#{pane_current_command}")" = "zsh" ]; then tmux send-keys "${EDITOR:-vim} '$file_path'" Enter; else tmux new-window -c "#{pane_current_path}" "${EDITOR:-vim} '$file_path'"; fi'''
-description = "Open in text editor (send to pane if zsh, else new window)"
+command = '''_f={value}; _line=$(printf '%s' "$_f" | grep -oE ':[0-9]+$' | tr -d ':'); _path=$(printf '%s' "$_f" | sed 's/:[0-9]*$//'); [ -z "$_line" ] && _line=1; _path=$(eval echo "$_path"); if [ "$(tmux display-message -p "#{pane_current_command}")" = "zsh" ]; then tmux send-keys "${EDITOR:-vim} +${_line} '$_path'" Enter; else tmux new-window -c "#{pane_current_path}" "${EDITOR:-vim} +${_line} '$_path'"; fi'''
+description = "Open in text editor at matched line (send to pane if zsh, else new window)"
 
 [actions.git_show]
 command = '''tmux new-window -c "#{pane_current_path}" "git show {value} 2>/dev/null || git log --all --oneline | grep {value} || (echo 'Not found in git history' && read)"'''
