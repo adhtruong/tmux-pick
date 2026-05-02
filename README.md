@@ -5,23 +5,13 @@ Interactive pattern matching and action execution for tmux. Extract URLs, git ha
 ## Features
 
 - **Pattern Extraction**: Capture URLs, git commits, IP addresses, file paths from tmux panes
-- **Interactive Selection**: fzf-powered interface
+- **Interactive Selection**: fzf-powered interface with `[TYPE] value` display
 - **Configurable Actions**: Execute shell commands based on pattern type
 - **Config-Driven**: TOML configuration for patterns and actions
 - **Fallback Support**: Alternative commands for cross-platform compatibility
 - **Capture Groups**: Extract specific portions while matching with context
 
 ## Installation
-
-### Quick Start
-
-1. Copy the default config:
-```bash
-mkdir -p ~/.config
-cp config.default.toml ~/.config/tmux-pick.toml
-```
-
-2. Install the plugin (see methods below)
 
 ### With TPM (Tmux Plugin Manager)
 
@@ -38,12 +28,12 @@ Then press `prefix + I` to install.
 ### Manual
 
 1. Clone this repository
-2. Copy default config: `cp config.default.toml ~/.config/tmux-pick.toml`
+2. Copy default config: `cp tmux_pick/config.default.toml ~/.config/tmux-pick.toml`
 3. Add to `.tmux.conf`:
 
 ```tmux
 set -g @pick-config '~/.config/tmux-pick.toml'
-run-shell 'path/to/tmux-pick/pick.tmux'
+bind-key u run-shell 'path/to/tmux-pick/tmux-pick'
 ```
 
 ## Usage
@@ -54,50 +44,36 @@ run-shell 'path/to/tmux-pick/pick.tmux'
 
 1. Press the keybinding in a tmux pane
 2. Patterns are extracted from the last 3000 lines
-3. Select a pattern with fzf
+3. Select a pattern with fzf (`[TYPE] value` display)
 4. Press Enter to execute the action
 
 ### Standalone
 
-The Python module can be used outside of tmux:
-
 ```bash
-# Extract patterns from text
+# Extract patterns from text (outputs value\ttype lines)
 echo "Check out https://example.com" | uv run -m tmux_pick extract
 
-# Execute an action
-uv run -m tmux_pick execute "[URL] https://example.com"
+# Execute an action (input format: value\ttype)
+echo -e "https://example.com\tURL" | xargs -0 uv run -m tmux_pick execute
 ```
 
 ## Configuration
 
-### Start with Defaults
+### Config File Location
 
-The project includes `config.default.toml` with common patterns (URLs, files, git hashes, IPs). Copy it to get started:
-
-```bash
-cp config.default.toml ~/.config/tmux-pick.toml
-```
-
-Then customize by enabling/disabling patterns or adding your own.
-
-### Required: Config File Location
-
-**Must be set before loading the plugin:**
+Set before loading the plugin:
 
 ```tmux
 set -g @pick-config '~/.config/tmux-pick.toml'
 ```
 
-### Optional: Custom Keybinding
+Or via environment variable:
 
-```tmux
-set -g @pick-key 'o'  # Use prefix + o instead of u
+```bash
+PATTERN_CONFIG=~/.config/tmux-pick.toml tmux-pick
 ```
 
 ### Config Format
-
-Create a TOML file with patterns and actions:
 
 ```toml
 [[patterns]]
@@ -109,91 +85,67 @@ enabled = true
 
 [[patterns]]
 name = "FILE"
-regex = '''([a-zA-Z0-9_./\-]+\.(?:py|js|ts|jsx|tsx))'''
-description = "File paths"
+# Use capture group to extract just the path from surrounding context
+regex = '''(?:^|\s|['"])([/~][a-zA-Z0-9._/\-~]*[a-zA-Z0-9_/\-~])'''
+description = "Absolute and home-relative file paths"
 action = "open_editor"
 enabled = true
 
+# Note: {value} is automatically shell-escaped - do not add extra quotes
 [actions.open_browser]
-command = 'open "{value}"'
-fallback = 'xdg-open "{value}"'
+command = 'open {value}'
+fallback = 'xdg-open {value}'
 description = "Open in default browser"
 
 [actions.open_editor]
-command = '''tmux new-window -c "#{pane_current_path}" "${EDITOR:-vim} '{value}'"'''
+command = '''tmux new-window -c "#{pane_current_path}" "${EDITOR:-vim} {value}"'''
 description = "Open in text editor"
 ```
 
 ### Pattern Fields
 
-- **`name`**: Pattern type identifier (used in tags like `[URL]`)
+- **`name`**: Pattern type identifier (shown as `[NAME]` in fzf)
 - **`regex`**: Regular expression (Python syntax)
   - Use capture groups `(...)` to extract specific portions
   - Use non-capturing groups `(?:...)` for context matching
-  - If capture group exists, group(1) is extracted; otherwise full match is used
+  - If a capture group exists, `group(1)` is extracted; otherwise the full match is used
 - **`description`**: Human-readable description
-- **`action`**: Which action to execute
+- **`action`**: Which action to execute (must match a key in `[actions]`)
 - **`enabled`**: Whether this pattern is active
 
 ### Action Fields
 
-- **`command`**: Shell command to execute
-  - `{value}` is replaced with the matched text
-  - Use `#{pane_current_path}` for tmux pane's directory
-- **`fallback`** (optional): Alternative command if primary fails
+- **`command`**: Shell command to execute. `{value}` is replaced with the matched text, automatically shell-escaped — do not wrap in extra quotes.
+  - `#{pane_current_path}` expands to the tmux pane's current directory
+- **`fallback`** (optional): Alternative command if the primary fails (e.g. non-macOS)
 - **`description`** (optional): Human-readable description
-
-### Environment Variables
-
-- **`$PATTERN_CONFIG`**: Path to config file
-
-## Regex and Capture Groups
-
-Extract specific portions while matching with context:
-
-```toml
-[[patterns]]
-name = "FILE"
-# group(1) extracts just the filename
-regex = '''(?:^|\s)([a-zA-Z0-9_./\-]+\.py)(?:\s|$)'''
-```
-
-- **Capturing group** `(...)`: Extracted as the value
-- **Non-capturing group** `(?:...)`: Used for matching but not extracted
-- First capture group is used; if none exist, entire match is extracted
 
 ## Default Patterns
 
-The included `config.default.toml` provides these patterns:
+The bundled `config.default.toml` includes:
 
-- **URL**: HTTP/HTTPS URLs → Open in browser
-- **FILE**: File paths with common extensions → Open in editor (new tmux window)
-- **GIT**: Git commit hashes (7-40 chars) → Show commit details
-- **IP**: IPv4 addresses → Copy to clipboard
-- **PATH**: Absolute paths → Open file/directory
-- **PORT**: localhost URLs → Open in browser (disabled by default)
+| Pattern | Matches | Action |
+|---------|---------|--------|
+| **URL** | `https?://...` | Open in browser |
+| **FILE** | Absolute/home paths and files with known extensions | Open in editor (sends to pane if shell is zsh, else new window) |
+| **GIT** | Hex strings 7–40 chars (with negative lookaround to reduce false positives) | `git show` in new window, falls back to `git log --all \| grep` |
+| **IP** | IPv4 addresses, optional `:port` | Copy to clipboard |
+| **AGENT** | `cursor-agent\|claude\|agent --resume <uuid>` | Send to current pane |
 
-Copy the file and enable/disable patterns as needed.
+Copy `tmux_pick/config.default.toml` to `~/.config/tmux-pick.toml` and customize.
 
 ## Requirements
 
 - **fzf**: Fuzzy finder for interactive selection
 - **tmux**: For tmux integration
-- **Python 3.14+**: Core logic
+- **Python 3.14+**: Core logic (uses stdlib `tomllib`)
 - **uv**: Python package manager
 
 ## Development
 
-### Run tests
-
 ```bash
-uv run pytest -v
-```
-
-### Run checks
-
-```bash
-prek  # Runs pre-commit hooks
+uv run pytest -v   # Run tests
+prek               # Run pre-commit checks (ruff, pyright)
 ```
 
 ### Project Structure
@@ -202,14 +154,15 @@ prek  # Runs pre-commit hooks
 tmux-pick/
 ├── tmux_pick/
 │   ├── __init__.py
-│   ├── __main__.py      # CLI entry point (single call to main)
-│   └── core.py          # All business logic
+│   ├── __main__.py          # CLI entry point
+│   ├── core.py              # All business logic
+│   └── config.default.toml  # Bundled default config
 ├── bin/
-│   └── pattern_select   # Bash wrapper for uv
+│   └── pattern_select       # Bash wrapper for uv
 ├── tests/
-│   └── test_parser.py   # Parameterized tests
-├── pick.tmux            # TPM plugin entry
-└── tmux-pick            # Main bash orchestrator
+│   └── test_parser.py       # Parameterized tests including shell injection checks
+├── pick.tmux                # TPM plugin entry
+└── tmux-pick                # Main bash orchestrator + fzf UI
 ```
 
 ## License

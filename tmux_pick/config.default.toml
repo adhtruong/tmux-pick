@@ -13,38 +13,31 @@ enabled = true
 
 [[patterns]]
 name = "FILE"
-regex = '''([a-zA-Z0-9_./\-]+\.(?:py|js|ts|jsx|tsx|go|rs|java|rb|sh|md|json|yaml|yml|toml|txt|log))'''
-description = "File paths with common extensions"
+regex = '''(?:^|\s|['"])([/~][a-zA-Z0-9._/\-~]*[a-zA-Z0-9_/\-~]|[a-zA-Z0-9_/\-~]+\.(?:bash|conf|fish|java|json|toml|yaml|cpp|cfg|env|hpp|ini|jsx|md|py|rs|sh|ts|go|h|js|txt|tsx|vim|lua|yml|zsh)(?:[a-zA-Z0-9_\-]+)?)'''
+description = "File paths (absolute/home paths or relative with extensions)"
 action = "open_editor"
 enabled = true
 
 [[patterns]]
 name = "GIT"
-regex = '''\b([a-f0-9]{7,40})\b'''
+regex = '''(?<![-=])\b[0-9a-f]{7,40}\b(?!-)'''
 description = "Git commit hashes (7-40 hex chars)"
 action = "git_show"
 enabled = true
 
 [[patterns]]
 name = "IP"
-regex = '''\b(?:[0-9]{1,3}\.){3}[0-9]{1,3}\b'''
-description = "IPv4 addresses"
+regex = '''\b(?:[0-9]{1,3}\.){3}[0-9]{1,3}(?::[0-9]+)?\b'''
+description = "IP addresses (IPv4, optional port)"
 action = "copy_clipboard"
 enabled = true
 
 [[patterns]]
-name = "PATH"
-regex = '''(?<![:/])(/[a-zA-Z0-9_.\-][a-zA-Z0-9_./\-]*)'''
-description = "Absolute file paths"
-action = "open_path"
+name = "AGENT"
+regex = '''(?:cursor-agent|claude|agent) --resume[ =][0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'''
+description = "Agent resume commands with UUID"
+action = "send_to_pane"
 enabled = true
-
-[[patterns]]
-name = "PORT"
-regex = '''(?:localhost|127\.0\.0\.1):(\d{2,5})'''
-description = "Local ports (localhost:PORT)"
-action = "open_localhost"
-enabled = false
 
 # Actions define what happens when you select a pattern
 # Note: {value} is automatically escaped for shell safety - do not add quotes
@@ -55,25 +48,18 @@ fallback = 'xdg-open {value}'
 description = "Open URL in default browser"
 
 [actions.open_editor]
-command = '''tmux new-window -c "#{pane_current_path}" "${EDITOR:-vim} {value}"'''
-fallback = '${EDITOR:-vim} {value}'
-description = "Open file in editor (new tmux window or current terminal)"
+command = '''file_path=$(eval echo "{value}"); if [ "$(tmux display-message -p "#{pane_current_command}")" = "zsh" ]; then tmux send-keys "${EDITOR:-vim} '$file_path'" Enter; else tmux new-window -c "#{pane_current_path}" "${EDITOR:-vim} '$file_path'"; fi'''
+description = "Open in text editor (send to pane if zsh, else new window)"
 
 [actions.git_show]
-command = '''tmux new-window -c "#{pane_current_path}" "git show {value} | less"'''
-fallback = 'git show {value}'
+command = '''tmux new-window -c "#{pane_current_path}" "git show {value} 2>/dev/null || git log --all --oneline | grep {value} || (echo 'Not found in git history' && read)"'''
 description = "Show git commit details"
 
 [actions.copy_clipboard]
-command = 'printf "%s" {value} | pbcopy 2>/dev/null || printf "%s" {value} | wl-copy 2>/dev/null || printf "%s" {value} | xclip -selection clipboard 2>/dev/null'
+command = 'printf "%s" {value} | pbcopy && tmux display-message "Copied to clipboard"'
+fallback = 'printf "%s" {value} | wl-copy 2>/dev/null || printf "%s" {value} | xclip -selection clipboard'
 description = "Copy to clipboard (cross-platform)"
 
-[actions.open_path]
-command = '''tmux new-window -c "#{pane_current_path}" "${EDITOR:-vim} {value}"'''
-fallback = 'cd {value} 2>/dev/null || ${EDITOR:-vim} {value}'
-description = "Open path (file or directory)"
-
-[actions.open_localhost]
-command = 'open http://localhost:{value}'
-fallback = 'xdg-open http://localhost:{value}'
-description = "Open localhost URL in browser"
+[actions.send_to_pane]
+command = '''if [ "$(tmux display-message -p "#{pane_current_command}")" = "zsh" ]; then tmux send-keys {value} Enter; else tmux new-window -c "#{pane_current_path}" {value}; fi'''
+description = "Send command to current pane (send to pane if zsh, else new window)"
