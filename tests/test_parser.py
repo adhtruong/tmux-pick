@@ -1,5 +1,6 @@
 """Tests for pattern extraction and parsing logic."""
 
+import pathlib
 import shlex
 
 import pytest
@@ -302,6 +303,48 @@ def test_file_pattern_line_numbers(
     file_results = [r for r in results if r.endswith("\tFILE")]
     values = [r.split("\t")[0] for r in file_results]
     assert values == expected_values
+
+
+def test_file_validation_filters_nonexistent(tmp_path: pathlib.Path) -> None:
+    """FILE matches are dropped when path does not exist and pane_path is set."""
+    config = load_bundled_config()
+    results = find_patterns_in_text(
+        "open /nonexistent/path/file.py here", config, str(tmp_path)
+    )
+    file_results = [r for r in results if r.endswith("\tFILE")]
+    assert file_results == []
+
+
+def test_file_validation_passes_existent(tmp_path: pathlib.Path) -> None:
+    """FILE matches survive when path exists relative to pane_path."""
+    f = tmp_path / "main.py"  # type: ignore[operator]
+    _ = f.write_text("x = 1")
+    config = load_bundled_config()
+    results = find_patterns_in_text(f"open {f} here", config, str(tmp_path))
+    file_results = [r for r in results if r.endswith("\tFILE")]
+    assert len(file_results) == 1
+    assert file_results[0].split("\t")[0] == str(f)
+
+
+def test_file_validation_relative_path(tmp_path: pathlib.Path) -> None:
+    """Relative FILE paths are resolved against pane_path before checking existence."""
+    f = tmp_path / "config.toml"  # type: ignore[operator]
+    _ = f.write_text("[tool]")
+    config = load_bundled_config()
+    results = find_patterns_in_text(
+        "see config.toml for details", config, str(tmp_path)
+    )
+    file_results = [r for r in results if r.endswith("\tFILE")]
+    assert any("config.toml" in r for r in file_results)
+
+
+def test_file_validation_skipped_without_pane_path(default_config: Config) -> None:
+    """When pane_path is None validation is skipped and all matches are returned."""
+    results = find_patterns_in_text(
+        "open /nonexistent/path/file.py here", default_config
+    )
+    file_results = [r for r in results if r.endswith("\tFILE")]
+    assert len(file_results) == 1
 
 
 def test_full_pipeline_with_tabs(config: Config) -> None:

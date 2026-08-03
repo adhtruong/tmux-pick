@@ -16,20 +16,11 @@ notify() {
 	fi
 }
 
-# Get config from environment or tmux option
-if [[ -z "${PATTERN_CONFIG:-}" ]]; then
-	if [[ -n "${TMUX:-}" ]]; then
-		PATTERN_CONFIG=$(tmux show-option -gqv @pick-config)
-	fi
+# Resolve config: env var → @pick-config tmux option → bundled default (Python fallback)
+if [[ -z "${PATTERN_CONFIG:-}" ]] && [[ -n "${TMUX:-}" ]]; then
+	PATTERN_CONFIG=$(tmux show-option -gqv @pick-config)
 fi
-
-# Verify config is set
-if [[ -z "${PATTERN_CONFIG:-}" ]]; then
-	echo "Error: Config not set. Set @pick-config in tmux.conf" >&2
-	exit 1
-fi
-
-export PATTERN_CONFIG
+[[ -n "${PATTERN_CONFIG:-}" ]] && export PATTERN_CONFIG
 
 # Check dependencies
 command -v fzf &>/dev/null || {
@@ -41,9 +32,11 @@ command -v fzf &>/dev/null || {
 	exit 1
 }
 
-# Capture content
+# Capture content and pane path
 if [[ -n "${TMUX:-}" ]]; then
 	content=$(tmux capture-pane -p -J -S -3000)
+	PANE_PATH=$(tmux display-message -p "#{pane_current_path}")
+	export PANE_PATH
 else
 	[[ -p /dev/stdin ]] || {
 		echo "Error: Must be run from tmux or with stdin" >&2
@@ -52,24 +45,42 @@ else
 	content=$(cat)
 fi
 
-# Extract and validate patterns
-patterns=$(echo "$content" | "$PATTERN_SELECT" extract) || exit 1
-if [[ -z "$patterns" ]] || [[ -z "$(echo "$patterns" | tr -d '[:space:]')" ]]; then
+patterns=$(printf '%s\n' "$content" | "$PATTERN_SELECT" extract) || exit 1
+if [[ -z "$patterns" ]]; then
 	notify "No patterns found"
 	exit 0
 fi
 
-# Build fzf options with template formatting
-# Input format: value\ttype (tab-delimited)
-# Display: [type] value (formatted by fzf), Search: value only
-fzf_opts=(
-	--prompt='Select pattern: '
-	--header='Enter=execute | Esc=cancel'
-	--delimiter=$'\t'
-	--with-nth='[{2}] {1}'
-	--nth='1'
-)
-selected=$(echo "$patterns" | fzf "${fzf_opts[@]}") || exit 0
+# Prepend a colored display field so fzf renders colors while keeping the
+# original "value\ttype" for execution. --with-nth=1 shows only the display
+# field; cut -f2- recovers the original.
+display_patterns=$(printf '%s\n' "$patterns" | awk '
+BEGIN {
+	palette[1] = "\033[35m"; palette[2] = "\033[32m"; palette[3] = "\033[33m"
+	palette[4] = "\033[36m"; palette[5] = "\033[34m"; palette[6] = "\033[31m"
+	palette[7] = "\033[37m"
+	next_color = 1
+}
+{
+	n = split($0, f, "\t")
+	type = f[n]
+	value = $0; sub(/\t[^\t]*$/, "", value)
+	if (!(type in color_map)) {
+		color_map[type] = palette[next_color]
+		next_color = (next_color % 7) + 1
+	}
+	badge = sprintf("%-7s", "[" type "]")
+	printf "%s%s\033[0m %s\t%s\n", color_map[type], badge, value, $0
+}')
 
-# Execute if something was selected
-[[ -n "$selected" ]] && "$PATTERN_SELECT" execute "$selected"
+fzf_opts=(
+	--ansi
+	--prompt='Select pattern: '
+	--header='enter=execute  esc=cancel'
+	--delimiter=$'\t'
+	--with-nth=1
+)
+selected=$(printf '%s\n' "$display_patterns" | fzf "${fzf_opts[@]}") || exit 0
+
+# Strip the display field; the rest is the original value\ttype
+[[ -n "$selected" ]] && "$PATTERN_SELECT" execute "$(printf '%s' "$selected" | cut -f2-)"

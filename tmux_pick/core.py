@@ -7,7 +7,7 @@ import re
 import shlex
 import subprocess
 import sys
-from typing import NotRequired, TypedDict
+from typing import Callable, NotRequired, TypedDict
 
 import tomllib
 
@@ -20,6 +20,7 @@ class Pattern(TypedDict):
     description: str
     action: str
     enabled: bool
+    validate: NotRequired[str]
 
 
 class Action(TypedDict):
@@ -61,17 +62,33 @@ def load_config() -> Config:
     return load_bundled_config()
 
 
-def find_patterns_in_text(text: str, config: Config) -> list[str]:
-    """Extract patterns from text and return structured results.
+_VALIDATORS: dict[str, "Callable[[str, str], bool]"] = {}
 
-    Args:
-        text: Input text to search for patterns
-        config: Configuration containing pattern definitions
 
-    Returns:
-        List of delimited patterns: ["value|type", ...]
-    """
-    # Collect all matches with their positions in the text
+def _validator(
+    name: str,
+) -> "Callable[[Callable[[str, str], bool]], Callable[[str, str], bool]]":
+    def decorator(fn: "Callable[[str, str], bool]") -> "Callable[[str, str], bool]":
+        _VALIDATORS[name] = fn
+        return fn
+
+    return decorator
+
+
+@_validator("path")
+def _validate_path(match_text: str, pane_path: str) -> bool:
+    """True when the matched value (minus optional :line) exists on the filesystem."""
+    path = re.sub(r":\d+$", "", match_text)
+    path = os.path.expanduser(path)
+    if not os.path.isabs(path):
+        path = os.path.join(pane_path, path)
+    return os.path.exists(path)
+
+
+def find_patterns_in_text(
+    text: str, config: Config, pane_path: str | None = None
+) -> list[str]:
+    """Extract patterns from text and return structured results."""
     all_matches = []
 
     for pattern in config["patterns"]:
@@ -83,7 +100,6 @@ def find_patterns_in_text(text: str, config: Config) -> list[str]:
         except re.error:
             continue
 
-        # Find matches with their positions
         for match_obj in regex.finditer(text):
             # Use first capture group if present, otherwise full match
             match_text = (
@@ -92,11 +108,16 @@ def find_patterns_in_text(text: str, config: Config) -> list[str]:
             position = match_obj.start()
 
             if match_text:
-                # Output: value\ttype (tab-delimited, fzf will handle display formatting)
+                if (
+                    validator_name := pattern.get("validate")
+                ) and pane_path is not None:
+                    validator = _VALIDATORS.get(validator_name)
+                    if validator and not validator(match_text, pane_path):
+                        continue
                 structured = f"{match_text}\t{pattern['name']}"
                 all_matches.append((position, structured))
 
-    # Sort by position (reverse order - recent items first), deduplicate while preserving order
+    # Sort newest-first (reverse position), deduplicate while preserving order
     seen = set()
     results = []
     for _, structured in sorted(all_matches, key=lambda x: x[0], reverse=True):
@@ -155,24 +176,34 @@ def execute_command(action: Action, value: str) -> None:
     command = _prepare_command(action["command"], value)
 
     try:
-        subprocess.run(command, shell=True, check=True)
-    except (subprocess.CalledProcessError, FileNotFoundError) as e:
+        subprocess.run(command, shell=True, check=True, stderr=subprocess.PIPE)
+    except subprocess.CalledProcessError as e:
+        stderr = e.stderr.decode(errors="replace").strip()
+        msg = f"Command failed (exit {e.returncode}): {command}"
+        if stderr:
+            msg += f"\n{stderr}"
         if fallback := action.get("fallback"):
+            print(f"Warning: {msg}, trying fallback", file=sys.stderr)
             try:
                 subprocess.run(
-                    _prepare_command(fallback, value), shell=True, check=True
+                    _prepare_command(fallback, value),
+                    shell=True,
+                    check=True,
+                    stderr=subprocess.PIPE,
                 )
-            except (subprocess.CalledProcessError, FileNotFoundError):
-                raise RuntimeError(f"Could not execute action: {e}") from e
+            except subprocess.CalledProcessError as fe:
+                fb_stderr = fe.stderr.decode(errors="replace").strip()
+                raise RuntimeError(f"{msg}\nFallback also failed: {fb_stderr}") from fe
         else:
-            raise RuntimeError(f"Could not execute action: {e}") from e
+            raise RuntimeError(msg) from e
 
 
 def extract_patterns_from_stdin() -> None:
     """Extract patterns from stdin and output tagged results."""
     config = load_config()
+    pane_path = os.environ.get("PANE_PATH")
     text = sys.stdin.read()
-    results = find_patterns_in_text(text, config)
+    results = find_patterns_in_text(text, config, pane_path)
 
     for result in results:
         print(result)

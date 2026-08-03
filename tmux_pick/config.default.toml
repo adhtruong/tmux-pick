@@ -5,35 +5,36 @@
 # and tags them for selection in fzf.
 
 [[patterns]]
-name = "URL"
+name = "url"
 regex = '''https?://[^\s<>"'()]+'''
 description = "HTTP/HTTPS URLs"
 action = "open_browser"
 enabled = true
 
 [[patterns]]
-name = "FILE"
+name = "file"
 regex = '''(?:^|\s|['"])((?:/|~/|\./)[^\s<>"'\\|;{}(),*\[\]?\t]*[a-zA-Z0-9_\-](?::\d+)?|[a-zA-Z0-9_][a-zA-Z0-9_.\-/]*\.(?:bash|conf|fish|java|json|toml|yaml|cpp|cfg|env|hpp|ini|jsx|md|py|rs|sh|ts|go|h|js|txt|tsx|vim|lua|yml|zsh)(?::\d+)?)'''
 description = "File paths (absolute, home, relative with ./, or relative with known extension) with optional :line"
 action = "open_editor"
 enabled = true
+validate = "path"
 
 [[patterns]]
-name = "GIT"
+name = "git"
 regex = '''(?<![-=])\b[0-9a-f]{7,40}\b(?!-)'''
 description = "Git commit hashes (7-40 hex chars)"
 action = "git_show"
 enabled = true
 
 [[patterns]]
-name = "IP"
+name = "ip"
 regex = '''\b(?:[0-9]{1,3}\.){3}[0-9]{1,3}(?::[0-9]+)?\b'''
 description = "IP addresses (IPv4, optional port)"
 action = "copy_clipboard"
 enabled = true
 
 [[patterns]]
-name = "AGENT"
+name = "agent"
 regex = '''(?:cursor-agent|claude|agent) --resume[ =][0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'''
 description = "Agent resume commands with UUID"
 action = "send_to_pane"

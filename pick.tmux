@@ -8,12 +8,11 @@ default_key="u"
 key_binding=$(tmux show-option -gqv @pick-key)
 key_binding=${key_binding:-$default_key}
 
-# Get config path from tmux option (required)
+# @pick-config is optional; if unset Python falls back to ~/.config/tmux-pick.toml
+# then to the bundled default config
 config_path=$(tmux show-option -gqv @pick-config)
-if [[ -z "$config_path" ]]; then
-	tmux display-message "Error: @pick-config not set"
-	exit 1
+if [[ -n "$config_path" ]]; then
+	tmux bind-key "$key_binding" run-shell "PATTERN_CONFIG='$config_path' $CURRENT_DIR/tmux-pick"
+else
+	tmux bind-key "$key_binding" run-shell "$CURRENT_DIR/tmux-pick"
 fi
-
-# Set up key binding with config path
-tmux bind-key "$key_binding" run-shell "PATTERN_CONFIG='$config_path' $CURRENT_DIR/tmux-pick"
